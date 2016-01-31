@@ -1,0 +1,636 @@
+import java.awt.*;
+import javax.swing.*;
+import java.awt.event.*;
+import java.awt.image.*;
+import javax.imageio.*;
+import java.io.*;
+import javax.swing.border.*;
+import java.util.*;
+import java.nio.*;
+import MyQuantizer.*;
+import java.util.*;
+
+class Bcode extends JFrame implements ActionListener
+{
+	
+	JPanel imgPanel;
+	Canvas1 imgCanvas,bar;
+	JButton bu1,bu2,bu3;
+	int imgarr[][],hist[];
+	BufferedImage img,img1;
+	int finalarr[][];
+	int code[];
+	int essential[];
+	JFrame fr;
+	int w,h,implines;
+	Imgc cmp;
+	Bcode()
+	{
+		super("Bcode");		
+		this.setSize(500,500);
+		this.setResizable(false);
+		canvasadder();
+		buttonadder();
+		this.setLayout(new FlowLayout());
+		addWindowListener(new WindowL());
+		this.setVisible(true);
+	}
+
+	void canvasadder()
+	{
+		imgPanel = new JPanel();
+		imgCanvas = new Canvas1(null);
+		imgCanvas.setSize(400,400);
+		imgPanel.setSize(400,400);
+		Border loweredbevel;
+		TitledBorder title;
+		loweredbevel = BorderFactory.createLoweredBevelBorder();
+		title = BorderFactory.createTitledBorder(loweredbevel, "Source Image");
+		title.setTitlePosition(TitledBorder.ABOVE_TOP);
+		imgPanel.setBorder(title);
+		imgPanel.setVisible(true);
+		imgPanel.add(imgCanvas);
+		this.add(imgPanel);
+	}
+	void buttonadder()
+	{
+		bu1 = new JButton("Load Image");
+		bu2 = new JButton("Filter");
+		bu3 = new JButton("Histogram");
+		this.add(bu1);
+		this.add(bu2);
+		this.add(bu3);
+		bu1.addActionListener(this);
+		bu2.addActionListener(this);
+		bu3.addActionListener(this);
+	}
+	void imgadder()
+	{
+		JFileChooser fc=new JFileChooser();
+		cmp = new Imgc();		
+		File file=null;
+		int returnVal = fc.showOpenDialog(Bcode.this);
+		if (returnVal == JFileChooser.APPROVE_OPTION)
+                file = fc.getSelectedFile();		
+		try
+		{
+			img = ImageIO.read(file);
+			w = img.getWidth();
+			h = img.getHeight();
+			if(w>600 || h>600)
+			{
+				cmp.obtain(img);
+				this.img = cmp.getim();
+				w = img.getWidth();
+				h = img.getHeight();
+			}
+			imgCanvas.redo(img);
+		}			
+		catch(Exception e)
+		{
+			System.out.println("exception "+ e);
+		}
+	}
+
+	void changeto256()
+	{
+		int r,g,b,rgb;		
+		for(int i = 0;i<h;i++)
+		{
+			for(int j = 0;j < w;j++)
+			{
+				rgb= img.getRGB(j, i);
+				r = (rgb >> 16) & 0xFF;
+				g = (rgb >> 8) & 0xFF;
+				b = rgb & 0xFF;
+				imgarr[i][j] = (r+g+b)/3;
+			}
+		}
+	}
+	void imageto2d()
+	{		
+		PixelGrabber pg;
+		if(img==null)
+		{
+			return;
+		}
+		w = img.getWidth(null);
+		h = img.getHeight(null);
+		imgarr = new int[h][w];
+		try
+		{			
+			for(int i = 0; i < h ; i++)
+			{
+				pg = new PixelGrabber(img,0,i,w,1,imgarr[i],0,w);				
+				pg.grabPixels();	
+			}
+			changeto256();
+		}
+		catch(Exception e)
+		{
+			System.out.println("here "+e);
+		}
+	}
+	
+	void convol()
+	{
+		int temp;				
+		int convoler[][] = {{0,0,0},
+				    {0,1,0},
+				    {0,0,0}};
+		for(int i = 1; i < h -1 ; i++)
+		{
+			for(int j = 1 ; j < w -1 ; j++)
+			{
+				imgarr[i][j] =  convoler[0][0]*imgarr[i-1][j-1] 
+						+ convoler[0][1]*imgarr[i-1][j]
+						+ convoler[0][2]*imgarr[i-1][j+1]
+						+ convoler[1][0]*imgarr[i][j-1] 
+						+ convoler[1][1]*imgarr[i][j] 
+						+ convoler[1][2]*imgarr[i][j+1] 
+						+ convoler[2][0]*imgarr[i+1][j-1] 
+						+ convoler[2][1]*imgarr[i+1][j-1] 
+						+ convoler[2][2]*imgarr[i+1][j+1]; 
+						//imgarr[i][j] = imgarr[i][j]/2;
+				if(imgarr[i][j]<160) imgarr[i][j] = 0;
+				else imgarr[i][j]= 127;
+			}
+		}
+		initlines();
+		codegrab();			
+		arr2image();
+	}
+	void initlines()
+	{
+		essential = new int[h];
+		int count = 0;
+		implines = 0;
+		for(int i = 0;i<h;i++)
+		{	
+			count = 0;		
+			for(int j = 0;j<w-1;j++)
+			{
+				if(imgarr[i][j] == 127 &&  imgarr[i][j+1] == 0)
+				count++;
+			}
+			essential[i] = count;
+			if(count ==30)implines++;
+		}
+	}
+	void codegrab()
+	{
+		int avg[] = new int[w];
+		int zf = 0,nzf = 0;
+		Scanner sc;
+		int count = 0;
+		ArrayList<Integer> ar = new ArrayList<Integer>();	
+		for(int i = 0;i<w;i++)
+		{
+			for(int j = 0;j<h;j++)
+			{
+				if(essential[j] == 30)
+				{
+					avg[i] += imgarr[j][i];
+				}
+			}
+		}
+		for(int i = 0;i<w;i++)
+		{
+			avg[i] = avg[i]/implines;
+			if(avg[i]<=80) avg[i]=0;
+			else if(avg[i]>80) avg[i]=127;
+			System.out.print(avg[i] + " "); 
+		}
+		for(int i=0;i<avg.length-1;i++)
+		{
+			if(avg[i] ==0)
+			{				
+				if(avg[i+1] ==127)
+				{
+					ar.add(count);
+					count =1;
+				}
+				else
+					count++;	
+			}
+			else
+			{			
+				if(avg[i+1] ==0)
+				{
+					ar.add(count);
+					count = 1;
+				}
+				else
+					count++;
+			}
+		}
+		for(int i=0;i<5;i++)
+		ar.remove(29);
+		int a = 0;
+		String str="";
+		System.out.println(ar.size());	
+		for(int x:ar)
+		{
+			if(a%4==0 && a!=0)
+			{
+				//System.out.print(" ");
+				str = str+" ";
+			}
+			a++;
+			if(x!=1)
+			{
+				//System.out.print(x/2);
+				if(x/2>4 && x/2<8) 
+					str = str+"4";
+				else
+					str = str+""+x/2;
+			}
+			else
+			{				
+				//System.out.print(x);
+				str = str + "" + x;
+			}
+		}
+		System.out.println("\n"+str);
+		sc = new Scanner(str);
+		code = new int[14];
+		int index=0;		
+		while(sc.hasNext())
+		{
+			code[index++] = paritychk(coderect(sc.nextInt()));
+		}
+		for(int i = 0;i<code.length;i++)
+			System.out.print(coder(thresholder(code[i]))+" ");
+		System.out.println();
+	}
+	
+	
+	int coderect(int val)
+	{
+		int a[] = new int[4];
+		int q = 0;
+		int  v;
+		v = val;
+		int i = 0;
+		int sum;
+		try
+		{
+			while(val!=0)
+			{
+				a[i++] = val%10;
+				val = val/10;
+			}
+			sum = a[0] + a[1] + a[2] + a[3];
+		}
+		catch(Exception e)
+		{
+			return v;
+		}
+		v = 0;
+		if(sum>7)
+		{
+			sum = sum -7;
+			while(sum!=0)
+			{
+				v = maxel(a);				
+				a[v] = a[v]-1;
+				sum = sum-1;
+			}
+		}
+		return(a[3]*1000+a[2]*100+a[1]*10+a[0]);
+	}
+	int maxel(int a[])
+	{
+		int temp = -1,ind = 0;		
+		for(int i=0;i<a.length;i++)
+		{
+			if(a[i]>temp)
+			{
+				temp = a[i];
+				ind = i;
+			}
+		}
+		return ind;
+	}
+	
+	int paritychk(int val)
+	{
+		int a[] = new int[4];
+		int v = val;
+		int i = 0;		
+		try
+		{
+			while(val!=0)
+			{
+				a[i++] = val%10;
+				val = val/10;
+			}
+			if((a[1]+a[3])%2!=0)
+			{
+				return(a[0]*1000+a[1]*100+a[2]*10+a[3]);
+			}
+			else
+			{
+				return(a[3]*1000+a[2]*100+a[1]*10+a[0]);
+			}
+		}
+		catch(Exception e)
+		{		
+			return v;
+		}
+	}						
+	void arr2image()
+	{
+		MyQuantizer mq = new MyQuantizer();
+		int k=0;		
+		int ar[] = new int[h*w];
+		hist = new int[128];		
+		w = img.getWidth(null);
+		h = img.getHeight(null);		
+		for(int i = 0 ; i < h ; i++)
+		{
+			for(int j = 0 ; j < w ; j++)
+			{
+				ar[k++] = imgarr[i][j];
+			}
+		}
+		byte array[] = new byte[w*h];
+		array = mq.thefunc(ar);
+		for(int i=0;i<h*w;i++)
+		{
+				hist[array[i]]++;
+		}
+		File f = new File("retrieve.jpg");
+		img1 = new BufferedImage(w, h, 12);
+            	WritableRaster raster = (WritableRaster)img1.getData();
+            	raster.setDataElements(0,0,w,h,array);
+		img1.setData(raster);
+		try
+		{			
+			ImageIO.write(img1,"jpg",f);
+		}
+		catch(Exception e)
+		{
+			System.out.println("caught" + e);
+		}
+		imgCanvas.redo(img1);
+	}
+	int coder(int val)
+	{
+		//0 = 3211, 1 = 2221, 2 = 2122, 3 = 1411, 4 = 1132, 5 = 1231, 6 = 1114, 7 = 1312, 8 = 1213, 9 = 3112
+		switch(val)
+		{
+			case 3211:	 return 0;
+			case 2221:	 return 1;
+			case 2122:	 return 2;
+			case 1411:	 return 3;
+			case 1132:	 return 4;
+			case 1231:	 return 5;
+			case 1114:	 return 6;
+			case 1312:	 return 7;
+			case 1213:	 return 8;
+			case 3112:	 return 9;
+		        default  :	 return 51;
+		}
+	}
+	int thresholder(int val)
+	{
+		int dataset[] = {3211,2221,2122,1411,1132,1231,1114,1312,1213,3112};
+		int min = Integer.MAX_VALUE,mark=0;
+		int temp;
+		for(int i=0;i<10;i++)
+		{
+			temp = differ(val,dataset[i]);
+			if(temp ==99) return 99;
+			if(temp<min)
+			{
+				mark = i;
+				min = temp;
+				//System.out.println("in threshold"+i+" "+temp+" "+val);
+			}
+		}
+		//System.out.println("\n\n");
+		return dataset[mark];
+	}
+	int differ(int a,int b)
+	{
+		String v = a+"";
+		String d = b+"";
+		int x=0,y=0,z=0,w=0,i;
+		if(v.equals("111") || v.equals("101"))
+			return 99;
+		if(v.length()==3)
+			v = "0"+v;
+		if(v.length()==5)
+		v = v.charAt(0) + "" + v.charAt(1) + "" +v.charAt(2) + "" + v.charAt(3) + "";
+		for(i=0;i<4;i++)
+		{
+			if(v.length()==4)
+			{				
+				x = x+Math.abs(v.charAt(i)-d.charAt(i));
+			}
+		}
+		if(i==4) return x;
+		else return 99;
+	}	
+	void histogram()
+	{
+		fr = new JFrame("histogram");		
+		fr.setVisible(true);
+		fr.add(new Canvas2(hist));
+		fr.setSize(750,400);		
+		fr.setVisible(true);
+		fr.setResizable(false);			
+	}	
+
+	public void actionPerformed(ActionEvent ae)
+	{
+		String str = ae.getActionCommand();
+		if(str.equals("Filter"))
+		{
+			imageto2d();
+			convol();	
+		}
+		else if(str.equals("Histogram"))
+		{
+			histogram();
+		}
+		else if(str.equals("Load Image"))
+		{
+			imgadder();
+			System.out.println(h + " " + w);	
+		}
+	}
+	public static void main(String[] args)
+	{
+		new Bcode();
+	}
+}
+
+class WindowL extends WindowAdapter
+{
+	public void windowClosing(WindowEvent we)
+	{
+		System.exit(0);
+	}
+}
+
+class Canvas1 extends Canvas
+{
+	BufferedImage bg;
+	Canvas1(BufferedImage bg)
+	{
+		this.bg =bg;
+	}
+	void redo(BufferedImage bg)
+	{
+		this.bg = bg;
+		repaint();
+	}	
+	public void paint(Graphics g)
+	{
+		if(bg==null)
+			System.out.print("");
+		else		
+		{
+			g.drawImage(bg,10,10,400,400,null);
+		}
+	}
+}
+
+
+class Canvas2 extends Canvas
+{
+	int arr[];
+	float max = 0,d;
+	Canvas2(int arr[])
+	{
+		this.arr =arr;
+		for(int i = 0; i <128;i++)
+		{
+			if(max<arr[i])
+				max = arr[i];
+		}
+			
+	}	
+	public void paint(Graphics g)
+	{
+		g.drawString("0",15,314);
+		g.drawString("127",16 + 128*5,314);
+		for(int i = 0 ; i < 128*5 ; i=i+5)
+		{
+			for(int j = 0;j<100;j++)
+			{
+				d = (float)arr[i/5]/max * (float)1000;
+				if(d<300)
+					d=d;
+				else
+					d = 270;
+				g.drawLine(20+i,300,20+i,300-(int)d);
+				
+			}
+		} 
+	}
+}
+//for image compression
+class Imgc 
+{
+	int b[],finb[],b1[];
+	int h,w;	
+	PixelGrabber pg;
+	FileWriter fr;
+	BufferedImage img,img1,img11;
+	void obtain(BufferedImage img)
+	{
+		this.img = img;
+		grabnslice();
+	}
+	void grabnslice()
+	{
+		int k = 0,i,offset=0;		
+		w = img.getWidth();
+		h = img.getHeight();
+		if(w%2!=0) w = w-1;
+		if(h%2!=0) h = h-1;
+		b = new int[h*w];
+		pg = new PixelGrabber(img,5,5,w,h,b,0,w);
+		try
+		{
+			pg.grabPixels();
+		}
+		catch(Exception e)
+		{
+			System.out.println();
+		}	
+		finb = new int[h*w/2];
+		for(i=0;i<h*w;)
+		{
+			if(i%w == w-1)
+			{
+				offset++;
+			}			
+			if(i%w==0 && offset%2!=0)
+			{				
+				i = i+w;
+				offset++;
+			} 
+			else if(i%2==1)
+			{
+				i++;
+			}
+			else 
+			{
+				finb[k++] = b[i++];
+			}
+		}
+		System.out.println(k);
+		try
+		{
+			fr = new FileWriter("my.txt");
+			for(i = 0;i<h*w/4;i++)
+				fr.write(finb[i]+" ");		
+			fr.write("\n");	
+			fr.write(i+" ");
+			fr.close();
+		}
+		catch(Exception e)
+		{
+			System.out.println();
+		}				
+	}
+	BufferedImage getim()
+	{
+		MyQuantizer mq = new MyQuantizer();
+		byte array[] = new byte[w*h/4];
+		array = mq.thefunc(finb);
+		img1 = new BufferedImage(w/2, h/2, 1);
+            	WritableRaster raster = (WritableRaster)img1.getData();
+            	raster.setDataElements(0,0,w/2,h/2,finb);
+		img1.setData(raster);
+		fimg();
+		return img11;
+	}
+	void fimg()
+	{
+		int w1 = img1.getWidth();
+		int h1 = img1.getHeight();		
+		b1 = new int[w1*h1];		
+		pg = new PixelGrabber(img1,0,0,w1,h1,b1,0,w1);
+		try
+		{
+			pg.grabPixels();
+		}
+		catch(Exception e)
+		{
+			System.out.println("exception here"+e);
+		}
+		for(int i=0;i<h1*w1;i++)
+		{
+			finb[i] = b1[i];
+		}
+		img11 = new BufferedImage(w1, h1, 1);
+            	WritableRaster raster1 = (WritableRaster)img11.getData();
+            	raster1.setDataElements(0,0,w1,h1,finb);
+		img11.setData(raster1);
+	}
+}
